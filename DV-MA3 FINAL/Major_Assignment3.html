@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Force-Directed Graph</title>
+    <script src="d3.js"></script>
+
+    <style>
+
+        body {
+
+            font-family: 'Roboto', sans-serif; ;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #e6e6e6;
+        }
+
+
+
+        #container {
+            display: flex;
+            align-items: flex-end;
+            position: relative;
+            width: 80%;
+            margin: 0 auto;
+        }
+
+        #visualization {
+            flex: 0 0 80%;
+            margin-right: 10px;
+        }
+        #sideContainer {
+            flex: 1;
+            max-width: 20%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 10px;
+
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+        }
+        #topContainer,
+        #bottomContainer {
+            border-radius: 8px;
+            margin-bottom: 15px;
+            width: 100%;
+            height: 45%;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        #topContainer h2,
+        #bottomContainer h2 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        #topContainer p,
+        #bottomContainer p {
+            color: #555;
+            line-height: 1.5;
+        }
+
+
+        #topContainer {
+            order: 1;
+        }
+
+        #bottomContainer {
+            order: 2;
+        }
+
+        #topContainer button,
+        #bottomContainer button {
+            background: linear-gradient(to right, #3498db, #2ecc71, #e74c3c);
+            color: #fff;
+            padding: 12px 18px;
+            border: 2px solid #2980b9;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.2em;
+            transition: background-color 0.3s ease;
+        }
+
+        #topContainer button:hover,
+        #bottomContainer button:hover {
+            background: linear-gradient(to right, #2ecc71, #3498db, #e74c3c);
+        }
+
+    </style>
+
+</head>
+<body>
+
+<div id="container">
+    <div id="visualization">
+
+        <svg id="visualization" viewBox="-200 50 3200 2200" style="align-content: center"></svg>
+
+    </div>
+    <div id="sideContainer">
+        <div id="topContainer">
+
+            <h3>Author Details</h3>
+            <p id="authorName"></p>
+            <p id="authorCountry"></p>
+            <p id="authorTitle"></p>
+            <p id="authorYear"></p>
+        </div>
+        <div id="bottomContainer">
+            <form id="controlForm">
+                <label>Link Strength:</label>
+                <input type="number" id="linkStrength" value="" min="0" step="0.7"><br>
+
+                <label>Collide Force:</label>
+                <input type="number" id="collideForce" value="" min="0" step="9"><br>
+
+                <label>Charge Force:</label>
+                <input type="number" id="chargeForce" value="" step="1"><br>
+
+                <label>Node Size:</label>
+                <input type="radio" name="nodeSize" value="citations" checked> No. of Citations
+                <input type="radio" name="nodeSize" value="publications"> No.of Publications
+
+
+                <button onclick="submitForm()">Submit</button>
+
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+    d3.select("#linkStrength").property("value", "1").dispatch("input")
+    d3.select("#collideForce").property("value", "25").dispatch("input")
+    d3.select("#chargeForce").property("value", "-3").dispatch("input")
+    let strengthValue = parseFloat(d3.select("#linkStrength").property("value"))
+    let collideValue = parseFloat(d3.select("#collideForce").property("value"))
+    let chargeValue = parseFloat(d3.select("#chargeForce").property("value"))
+    let selectedValue = d3.select('input[name="nodeSize"]:checked').node().value;
+    upgrade()
+
+    function submitForm() {
+        d3.select("#visualization svg").selectAll("*").remove();
+        d3.select("#linkStrength").on("input", function () {
+            const value = parseFloat(this.value);
+            console.log(value)
+            if(strengthValue>=0 && strengthValue<=1) {
+                strengthValue = isNaN(value) ? 1 : value;
+            }
+            else
+            {
+                strengthValue = 1;
+            }
+            //upgrade();
+        })
+
+        d3.select("#collideForce").on("input", function () {
+            const value = parseFloat(this.value);
+            collideValue = isNaN(value) ? 25 : value;
+
+            //upgrade();
+        })
+
+        d3.select("#chargeForce").on("input", function () {
+            const value = parseFloat(this.value);
+            chargeValue = isNaN(value) ? -3 : value;
+            //upgrade();
+        })
+
+        selectedValue = d3.select('input[name="nodeSize"]:checked').node().value;
+        console.log(0)
+
+        upgrade();
+
+    }
+
+    function upgrade() {
+        d3.json("coauthorship_data.json").then(function (data) {
+            const nodes = data.nodes;
+            const edges = data.links;
+            console.log("start")
+
+
+            const svg = d3.select("#visualization svg")
+                .attr("width", 800)
+                .attr("height", 600);
+
+            const width = parseInt(svg.attr("viewBox").split(" ")[2]);
+            console.log("width:", width)
+            const height = parseInt(svg.attr("viewBox").split(" ")[3]);
+
+            const zoom = d3.zoom()
+                .scaleExtent([1, 8])
+                .on("zoom", zoomed);
+
+            svg.call(d3.zoom().transform, d3.zoomIdentity)
+                .call(d3.zoom().scaleExtent([1 / 2, 8]).on("zoom", zoomed));
+
+
+            const main_group = svg.append("g")
+                .attr("transform", `translate(${width * 0.1},${height * 0.1}) scale(1.6)`);
+
+
+
+            const chargeForce = d3.forceManyBody()
+                .strength(chargeValue);
+
+            const simulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(edges).id(d => d.id).strength(strengthValue))
+                .force("charge", chargeForce)
+                .force("collide", d3.forceCollide(collideValue))
+                .force("center", d3.forceCenter(width / 2, height / 2));
+
+            const nodeSize = d3.scaleSqrt()
+                .domain([0, d3.max(nodes, d => d.citations * 1)])
+                .range([4, 20]);
+
+            const link = main_group.selectAll(".link")
+                .data(edges)
+                .join("line")
+                .attr("class", "link")
+                .attr("stroke", "grey")
+                .attr("stroke-width", 1.5);
+
+
+            const numberOfColors = 50;
+            const startColor = 'purple';
+            const endColor = 'gold';
+
+            const customColors = Array.from({ length: numberOfColors }, (_, i) => d3.interpolate(startColor, endColor)(i / (numberOfColors - 1)));
+            const colorScale = d3.scaleOrdinal(customColors);
+
+
+
+
+
+            const node = main_group.selectAll(".node")
+                .data(nodes)
+                .enter().append("circle")
+                .attr("class", "node")
+
+                .attr("fill", d => colorScale(d.country))
+                .style("pointer-events", "all")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+            node.append("text")
+                .attr("dx", 8)
+                .attr("dy", ".35em")
+                .style("font-size", "10px")
+                .text(d => {
+
+                    return d.authors})
+                .attr("text-anchor","middle");
+            let scale;
+            if (selectedValue === "publications") {
+
+                const authorPublicationsMap = new Map();
+
+                nodes.forEach(node => {
+                    const authors = node.authors.split(';');
+                    authors.forEach(author => {
+                        const trimmedAuthor = author.trim();
+                        authorPublicationsMap.set(trimmedAuthor, (authorPublicationsMap.get(trimmedAuthor) || 0) + 1);
+                    });
+                });
+
+
+                scale = d3.scaleSqrt()
+                    .domain([0, d3.max(Array.from(authorPublicationsMap.values()))])
+                    .range([4, 20]);
+
+
+                node.transition().duration(500)
+                    .attr("r", d => {
+                        const authors = d.authors.split(';');
+                        let totalPublications = 0;
+                        authors.forEach(author => {
+                            const trimmedAuthor = author.trim();
+                            totalPublications += authorPublicationsMap.get(trimmedAuthor) || 0;
+                        });
+                        return scale(totalPublications);
+                    })
+            }
+            else if(selectedValue==="degree")
+            {
+                nodes.forEach(node => {
+
+                    node.degree = edges.filter(edge => edge.source === node.id || edge.target === node.id).length;
+                });
+
+                const maxDegree = d3.max(nodes, d => d.degree);
+                const nodeSizeScale = d3.scaleSqrt()
+                    .domain([0, maxDegree])  // Use the max degree
+                    .range([4, 10]);
+                node.attr("r", d => nodeSizeScale(d.degree));
+            }
+            else
+            {
+                node.attr("r", d=>nodeSize(d.citations))
+            }
+
+
+
+            function zoomed(event) {
+                main_group.attr("transform", event.transform);
+            }
+
+
+            svg.call(d3.zoom()
+                .scaleExtent([1 / 2, 8])
+                .on("zoom", zoomed));
+
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+
+            svg.call(d3.zoom().transform, d3.zoomIdentity)
+                .call(d3.zoom().scaleExtent([1 / 2, 8]).on("zoom", zoomed));
+
+            node.call(d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended));
+
+            function ticked() {
+                link.attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                node.attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+            }
+
+            simulation.on("tick", ticked);
+
+            function showAuthorDetails(author) {
+                console.log(author)
+                d3.select("#authorName").text('Names: ' + author.authors);
+                d3.select("#authorCountry").text('Country: ' + author.country);
+                d3.select("#authorTitle").text('Title: ' + author.title);
+                d3.select("#authorYear").text('Year: ' + author.year);
+                d3.select("#authorDetails").style("display", "block");
+            }
+
+            node.on('click', function (event, d) {
+                showAuthorDetails(d);
+            });
+
+            console.log("end")
+        });
+    }
+</script>
+</body>
+</html>
