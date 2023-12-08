@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title> CT Scan Visualization</title>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://d3js.org/d3-contour.v2.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        input[type=range] {
+            width: 20%;
+            margin: 10px;
+            background: #dbcdcd;
+            border: 1px solid #ada7a7;
+            border-radius: 5px;
+            outline: none;
+        }
+
+        .slider-container {
+            width: 80%;
+            margin: 20px auto;
+        }
+
+        #brushX {
+            fill: none;
+            stroke: #007bff; /* Changed from red to a blue shade */
+            stroke-width: 2px;
+        }
+
+        .brush .handle {
+            fill: #007bff;
+            stroke: #fff;
+            stroke-width: 1.5px;
+        }
+
+        .brush .overlay {
+            fill: rgba(0, 123, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+<input type="range" min="1" max="1000" value="512" id="binCountSlider">
+<span id="binCountValue">512</span>
+
+<div class="slider-container">
+    <label for="brushX">Density Range:</label>
+    <br>
+    <div id="brushX"></div>
+    <span id="min-value"></span>
+    <span id="max-value"></span>
+</div>
+
+<svg id="contourMap" width="800" height="600"></svg>
+
+<script>
+    const ctImageDataFile = 'Data_CT.csv';
+    let bin_counts = 512;
+
+    const svg = d3.select("#contourMap");
+
+    function plotContour(data, min, max, threshold) {
+        const m = 512, n = 512;
+        let colorScale = d3.scaleLinear()
+            .domain(d3.range(min, max, parseInt(Math.abs(max - min) / 6.5)))
+            .range(["#ffffff", "#3e5ebc", "#2b83bf", "#abdda6","#d7191c","#fdfa72","#fdae61"])
+            .interpolate(d3.interpolateHcl);
+
+        let contours = d3.contours()
+            .size([m, n])
+            .thresholds(d3.range(min, max, threshold))
+            (data);
+
+        svg.selectAll("path").remove();
+        svg.selectAll("path")
+            .data(contours)
+            .enter().append("path")
+            .attr("d", d3.geoPath())
+            .attr("fill", d => colorScale(d.value));
+    }
+
+    d3.csv(ctImageDataFile, d => +d[0]).then(data => {
+        const min = d3.min(data);
+        const max = d3.max(data);
+        plotContour(data, min, max, bin_counts);
+
+        const binCountSlider = d3.select("#binCountSlider");
+        const binCountValue = d3.select("#binCountValue");
+
+        binCountSlider.on("input", function() {
+            bin_counts = +this.value;
+            binCountValue.text(bin_counts);
+            plotContour(data, min, max, bin_counts);
+        });
+
+        const brushX = d3.brushX()
+            .extent([[0, 0], [800, 30]])
+            .on("end", function (event) {
+                if (event.selection) {
+                    const selectedRange = event.selection.map(d => Math.round(d * 5));
+                    document.getElementById("min-value").innerText = selectedRange[0];
+                    document.getElementById("max-value").innerText = selectedRange[1];
+                    plotContour(data, selectedRange[0], selectedRange[1] + 2224, bin_counts);
+                }
+            });
+
+        d3.select("#brushX").append("svg")
+            .attr("width", 800)
+            .attr("height", 30)
+            .append("g").attr("class", "brush")
+            .call(brushX)
+            .selectAll("rect").attr("height", 30);
+    });
+</script>
+</body>
+</html>
